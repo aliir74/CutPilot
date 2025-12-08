@@ -75,7 +75,9 @@ def cut_single_clip(
         )
 
         if result.returncode != 0:
-            logger.warning(f"ffmpeg failed for {output_path.name}: {result.stderr[-200:]}")
+            logger.warning(
+                f"ffmpeg failed for {output_path.name}: {result.stderr[-200:]}"
+            )
             return False
 
         # Verify output exists and has content

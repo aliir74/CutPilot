@@ -1,7 +1,7 @@
 """Tests for transcribe.py - Whisper transcription."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -73,7 +73,9 @@ class TestTranscribeVideo:
         assert result[1].index == 1
         assert result[1].text == "This is a test"
 
-    def test_transcribe_strips_whitespace(self, mock_whisper_model, mock_video_duration):
+    def test_transcribe_strips_whitespace(
+        self, mock_whisper_model, mock_video_duration
+    ):
         """Test that text whitespace is stripped."""
         mock_segments = [
             MockSegment(0.0, 5.0, "  padded text  "),

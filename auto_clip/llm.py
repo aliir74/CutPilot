@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 from typing import TYPE_CHECKING
 
 import requests
@@ -21,14 +22,16 @@ WINDOW_SIZE_SECONDS = 600  # 10 minutes
 OVERLAP_SECONDS = 60  # 1 minute overlap
 
 
-SYSTEM_PROMPT = """You are an assistant that analyzes video transcripts and proposes clip ranges for social media shorts. Output ONLY valid JSON. Each clip must:
+SYSTEM_PROMPT = """You are an assistant that analyzes video transcripts and \
+proposes clip ranges for social media shorts. Output ONLY valid JSON. Each clip must:
 - Be between {min_length} and {max_length} seconds
 - Start and end at natural speech boundaries (use the segment timestamps provided)
 - Be semantically coherent and engaging
 - Work standalone without extra context
 
 Output format:
-{{"clips": [{{"start": <float>, "end": <float>, "title": "<string>", "description": "<string>", "reason": "<string>"}}]}}
+{{"clips": [{{"start": <float>, "end": <float>, "title": "<string>", \
+"description": "<string>", "reason": "<string>"}}]}}
 
 If no good clips are found, return: {{"clips": []}}"""
 
@@ -39,7 +42,8 @@ Min length: {min_length}s, Max length: {max_length}s
 Transcript segments:
 {transcript}
 
-Find engaging, self-contained clips that would work well as social media shorts. Return JSON only."""
+Find engaging, self-contained clips that would work well as social media shorts. \
+Return JSON only."""
 
 
 def call_openrouter_chat(
@@ -90,7 +94,7 @@ def _format_transcript_window(segments: list[TranscriptSegment]) -> str:
     return "\n".join(lines)
 
 
-def _parse_llm_response(response_text: str) -> list[dict]:
+def _parse_llm_response(response_text: str) -> list[dict]:  # noqa: C901
     """Parse LLM response to extract clips JSON.
 
     Args:
@@ -110,8 +114,6 @@ def _parse_llm_response(response_text: str) -> list[dict]:
         pass
 
     # Try to extract JSON from markdown code blocks
-    import re
-
     code_block_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", response_text)
     if code_block_match:
         try:
@@ -141,7 +143,9 @@ def _parse_llm_response(response_text: str) -> list[dict]:
                         # Continue looking for other valid JSON
                         pass
 
-    raise ValueError(f"Failed to parse JSON from LLM response: {response_text[:200]}...")
+    raise ValueError(
+        f"Failed to parse JSON from LLM response: {response_text[:200]}..."
+    )
 
 
 def _create_windows(
@@ -213,7 +217,7 @@ def _deduplicate_clips(clips: list[ClipProposal]) -> list[ClipProposal]:
     return result
 
 
-def propose_clips_with_llm(
+def propose_clips_with_llm(  # noqa: C901
     segments: list[TranscriptSegment],
     min_length: float,
     max_length: float,
@@ -293,7 +297,9 @@ def propose_clips_with_llm(
         try:
             raw_clips = _parse_llm_response(content)
         except ValueError as e:
-            logger.warning(f"Failed to parse LLM response for window {window_idx + 1}: {e}")
+            logger.warning(
+                f"Failed to parse LLM response for window {window_idx + 1}: {e}"
+            )
             continue
 
         # Convert to ClipProposal objects
@@ -305,7 +311,9 @@ def propose_clips_with_llm(
                 # Validate clip
                 duration = end - start
                 if duration < min_length * 0.8 or duration > max_length * 1.2:
-                    logger.debug(f"Skipping clip with invalid duration: {duration:.1f}s")
+                    logger.debug(
+                        f"Skipping clip with invalid duration: {duration:.1f}s"
+                    )
                     continue
 
                 if end <= start:

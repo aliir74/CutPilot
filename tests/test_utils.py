@@ -4,7 +4,7 @@ import json
 import logging
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -32,7 +32,11 @@ class TestSetupLogging:
 
         # Check that basicConfig was called with INFO level
         # The root logger or its effective level should be INFO
-        assert root_logger.level == logging.INFO or root_logger.getEffectiveLevel() == logging.INFO
+        is_info = (
+            root_logger.level == logging.INFO
+            or root_logger.getEffectiveLevel() == logging.INFO
+        )
+        assert is_info
 
     def test_setup_logging_verbose(self):
         """Test verbose logging setup (DEBUG level)."""
@@ -43,7 +47,11 @@ class TestSetupLogging:
 
         setup_logging(verbose=True)
 
-        assert root_logger.level == logging.DEBUG or root_logger.getEffectiveLevel() == logging.DEBUG
+        is_debug = (
+            root_logger.level == logging.DEBUG
+            or root_logger.getEffectiveLevel() == logging.DEBUG
+        )
+        assert is_debug
 
 
 class TestGetVideoDuration:

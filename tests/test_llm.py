@@ -2,14 +2,12 @@
 
 import json
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import requests
 
 from auto_clip.llm import (
-    OPENROUTER_URL,
-    WINDOW_SIZE_SECONDS,
     _create_windows,
     _deduplicate_clips,
     _format_transcript_window,
@@ -144,7 +142,10 @@ class TestParseLlmResponse:
 
     def test_parse_json_with_surrounding_text(self):
         """Test parsing JSON with surrounding text."""
-        response = 'Here is the analysis: {"clips": [{"start": 0, "end": 30}]} Hope this helps!'
+        response = (
+            'Here is the analysis: {"clips": [{"start": 0, "end": 30}]} '
+            "Hope this helps!"
+        )
         result = _parse_llm_response(response)
         assert result == [{"start": 0, "end": 30}]
 
@@ -221,7 +222,9 @@ class TestCreateWindows:
     def test_single_window_short_video(self):
         """Test that short video creates single window."""
         segments = [
-            TranscriptSegment(index=i, start=i * 10.0, end=(i + 1) * 10.0, text=f"Seg {i}")
+            TranscriptSegment(
+                index=i, start=i * 10.0, end=(i + 1) * 10.0, text=f"Seg {i}"
+            )
             for i in range(5)  # 50 seconds
         ]
 
@@ -234,7 +237,9 @@ class TestCreateWindows:
         """Test that long video creates multiple windows."""
         # Create 20 minutes of segments (1200 seconds)
         segments = [
-            TranscriptSegment(index=i, start=i * 30.0, end=(i + 1) * 30.0, text=f"Seg {i}")
+            TranscriptSegment(
+                index=i, start=i * 30.0, end=(i + 1) * 30.0, text=f"Seg {i}"
+            )
             for i in range(40)
         ]
 
@@ -252,7 +257,9 @@ class TestCreateWindows:
         """Test that windows overlap correctly."""
         # Create 15 minutes of segments
         segments = [
-            TranscriptSegment(index=i, start=i * 30.0, end=(i + 1) * 30.0, text=f"Seg {i}")
+            TranscriptSegment(
+                index=i, start=i * 30.0, end=(i + 1) * 30.0, text=f"Seg {i}"
+            )
             for i in range(30)  # 900 seconds
         ]
 
@@ -362,7 +369,10 @@ class TestProposeClipsWithLlm:
     def test_propose_clips_basic(self, mock_api):
         """Test basic clip proposal."""
         mock_api([
-            {"start": 0, "end": 45, "title": "Intro", "description": "Opening", "reason": "Good hook"},
+            {
+                "start": 0, "end": 45, "title": "Intro",
+                "description": "Opening", "reason": "Good hook"
+            },
         ])
 
         segments = [
@@ -404,9 +414,18 @@ class TestProposeClipsWithLlm:
     def test_propose_clips_filters_invalid_duration(self, mock_api):
         """Test that clips with invalid duration are filtered."""
         mock_api([
-            {"start": 0, "end": 10, "title": "Too short", "description": "", "reason": ""},  # < 25s
-            {"start": 20, "end": 70, "title": "Good", "description": "", "reason": ""},  # 50s - valid
-            {"start": 100, "end": 250, "title": "Too long", "description": "", "reason": ""},  # > 90s
+            # < 25s (too short)
+            {
+                "start": 0, "end": 10, "title": "Too short",
+                "description": "", "reason": ""
+            },
+            # 50s - valid
+            {"start": 20, "end": 70, "title": "Good", "description": "", "reason": ""},
+            # > 90s (too long)
+            {
+                "start": 100, "end": 250, "title": "Too long",
+                "description": "", "reason": ""
+            },
         ])
 
         segments = [
@@ -430,7 +449,10 @@ class TestProposeClipsWithLlm:
         """Test that clips are re-indexed after deduplication."""
         mock_api([
             {"start": 0, "end": 45, "title": "First", "description": "", "reason": ""},
-            {"start": 100, "end": 145, "title": "Second", "description": "", "reason": ""},
+            {
+                "start": 100, "end": 145, "title": "Second",
+                "description": "", "reason": ""
+            },
         ])
 
         segments = [
