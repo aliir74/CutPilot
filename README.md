@@ -22,7 +22,7 @@ Automatically create short clips from long-form video content (podcasts, talking
 ```bash
 # Clone the repository
 git clone <repo-url>
-cd kinshasa-v1
+cd <project-dir>
 
 # Create virtual environment and install dependencies
 uv venv
@@ -53,13 +53,13 @@ sudo apt install ffmpeg
 Basic usage:
 
 ```bash
-python -m auto_clip input.mp4
+uv run auto-clip input.mp4
 ```
 
 With options:
 
 ```bash
-python -m auto_clip input.mp4 \
+uv run auto-clip input.mp4 \
   --language fa \
   --min-length 25 \
   --max-length 90 \
@@ -84,13 +84,13 @@ python -m auto_clip input.mp4 \
 
 ```bash
 # English video with shorter clips
-python -m auto_clip podcast.mp4 --language en --min-length 15 --max-length 60
+uv run auto-clip podcast.mp4 --language en --min-length 15 --max-length 60
 
 # Preview clips without cutting (dry run)
-python -m auto_clip interview.mp4 --dry-run
+uv run auto-clip interview.mp4 --dry-run
 
 # Use a smaller/faster Whisper model
-python -m auto_clip video.mp4 --whisper-model medium
+uv run auto-clip video.mp4 --whisper-model medium
 ```
 
 ## Output
