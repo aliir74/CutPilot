@@ -1,6 +1,5 @@
 """CLI entry point for auto-clip."""
 
-import sys
 from pathlib import Path
 
 import typer
@@ -26,7 +25,7 @@ console = Console()
 
 
 @app.command()
-def main(
+def main(  # noqa: C901
     input_path: Path = typer.Argument(
         ...,
         help="Input video file (mp4, mov, etc.)",
@@ -90,7 +89,10 @@ def main(
     missing = check_dependencies()
     if missing:
         console.print(f"[red]Missing dependencies: {', '.join(missing)}[/red]")
-        console.print("[yellow]Please install ffmpeg: brew install ffmpeg (macOS) or apt install ffmpeg (Linux)[/yellow]")
+        console.print(
+            "[yellow]Please install ffmpeg: brew install ffmpeg (macOS) "
+            "or apt install ffmpeg (Linux)[/yellow]"
+        )
         raise typer.Exit(1)
 
     # Validate parameters
@@ -133,7 +135,9 @@ def main(
             console.print(f"\n[red]Transcription failed: {e}[/red]")
             raise typer.Exit(1)
 
-        progress.update(transcribe_task, completed=100, description="Transcription complete")
+        progress.update(
+            transcribe_task, completed=100, description="Transcription complete"
+        )
 
         # Save transcript
         transcript_path = output_dir / "transcript.json"
@@ -187,7 +191,10 @@ def main(
             raise typer.Exit(0)
 
         if not clips:
-            console.print("[yellow]No clips proposed. Try adjusting --min-length and --max-length.[/yellow]")
+            console.print(
+                "[yellow]No clips proposed. "
+                "Try adjusting --min-length and --max-length.[/yellow]"
+            )
             raise typer.Exit(0)
 
         # Step 3: Cut clips
@@ -218,10 +225,10 @@ def main(
     )
 
     # Summary
-    console.print(f"\n[bold green]Done![/bold green]")
+    console.print("\n[bold green]Done![/bold green]")
     console.print(f"  Created {len(output_paths)} clips in {output_dir}")
     console.print(f"  Transcript: {transcript_path.name}")
-    console.print(f"  Metadata: clips.json")
+    console.print("  Metadata: clips.json")
 
 
 if __name__ == "__main__":

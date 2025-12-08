@@ -1,7 +1,7 @@
 """Tests for transcribe.py - Whisper transcription."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -32,8 +32,8 @@ class TestTranscribeVideo:
     @pytest.fixture
     def mock_whisper_model(self, mocker):
         """Create a mock WhisperModel."""
-        # Patch at the source module where it's imported from
-        mock_model_class = mocker.patch("faster_whisper.WhisperModel")
+        # Patch where the class is used, not where it's defined
+        mock_model_class = mocker.patch("auto_clip.transcribe.WhisperModel")
         mock_model = MagicMock()
         mock_model_class.return_value = mock_model
         return mock_model
@@ -73,7 +73,9 @@ class TestTranscribeVideo:
         assert result[1].index == 1
         assert result[1].text == "This is a test"
 
-    def test_transcribe_strips_whitespace(self, mock_whisper_model, mock_video_duration):
+    def test_transcribe_strips_whitespace(
+        self, mock_whisper_model, mock_video_duration
+    ):
         """Test that text whitespace is stripped."""
         mock_segments = [
             MockSegment(0.0, 5.0, "  padded text  "),
@@ -195,7 +197,7 @@ class TestTranscribeVideo:
             return_value=60.0,
         )
 
-        mock_model_class = mocker.patch("faster_whisper.WhisperModel")
+        mock_model_class = mocker.patch("auto_clip.transcribe.WhisperModel")
 
         # First call (GPU) fails, second call (CPU) succeeds
         mock_model = MagicMock()
@@ -213,10 +215,11 @@ class TestTranscribeVideo:
 
         mock_model_class.side_effect = model_side_effect
 
-        # Mock torch to indicate CUDA is available (so it tries GPU first)
+        # Mock HAS_TORCH and torch at module level
+        mocker.patch("auto_clip.transcribe.HAS_TORCH", True)
         mock_torch = MagicMock()
         mock_torch.cuda.is_available.return_value = True
-        mocker.patch.dict("sys.modules", {"torch": mock_torch})
+        mocker.patch("auto_clip.transcribe.torch", mock_torch, create=True)
 
         result = transcribe_video(
             input_path=Path("/fake/video.mp4"),
