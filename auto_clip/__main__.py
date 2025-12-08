@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import typer
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -16,6 +17,9 @@ from .cutting import cut_clips
 from .llm import propose_clips_with_llm
 from .transcribe import transcribe_video
 from .utils import check_dependencies, save_json, setup_logging
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = typer.Typer(
     name="auto-clip",
