@@ -64,9 +64,9 @@ def main(  # noqa: C901
         help="OpenRouter model name for clip proposal.",
     ),
     whisper_model: str = typer.Option(
-        "large-v3",
+        "turbo",
         "--whisper-model",
-        help="Whisper model size (e.g., 'large-v3', 'medium', 'small').",
+        help="Whisper model size (e.g., 'turbo', 'large-v3', 'medium', 'small').",
     ),
     dry_run: bool = typer.Option(
         False,
@@ -114,6 +114,7 @@ def main(  # noqa: C901
     console.print(f"\n[bold blue]Auto-Clip[/bold blue] - Processing: {input_path.name}")
     console.print(f"  Language: {language}")
     console.print(f"  Clip length: {min_length}-{max_length}s")
+    console.print(f"  Whisper model: {whisper_model}")
     console.print(f"  Output: {output_dir}\n")
 
     with Progress(
@@ -125,7 +126,7 @@ def main(  # noqa: C901
     ) as progress:
 
         # Step 1: Transcribe video
-        transcribe_task = progress.add_task("Transcribing video...", total=100)
+        transcribe_task = progress.add_task("Loading Whisper model...", total=100)
         try:
             segments = transcribe_video(
                 input_path=input_path,

@@ -1,4 +1,4 @@
-"""Tests for transcribe.py - Whisper transcription."""
+"""Tests for transcribe.py - mlx-whisper transcription."""
 
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -6,37 +6,18 @@ from unittest.mock import MagicMock
 import pytest
 
 from auto_clip.segment import TranscriptSegment
-from auto_clip.transcribe import transcribe_video
-
-
-class MockSegment:
-    """Mock faster-whisper segment."""
-
-    def __init__(self, start: float, end: float, text: str):
-        self.start = start
-        self.end = end
-        self.text = text
-
-
-class MockTranscriptionInfo:
-    """Mock faster-whisper transcription info."""
-
-    def __init__(self, language: str = "en", probability: float = 0.95):
-        self.language = language
-        self.language_probability = probability
+from auto_clip.transcribe import MODEL_REPOS, transcribe_video
 
 
 class TestTranscribeVideo:
     """Tests for transcribe_video function."""
 
     @pytest.fixture
-    def mock_whisper_model(self, mocker):
-        """Create a mock WhisperModel."""
-        # Patch where the class is used, not where it's defined
-        mock_model_class = mocker.patch("auto_clip.transcribe.WhisperModel")
-        mock_model = MagicMock()
-        mock_model_class.return_value = mock_model
-        return mock_model
+    def mock_mlx_whisper(self, mocker):
+        """Create a mock mlx_whisper module."""
+        mock_module = MagicMock()
+        mocker.patch.dict("sys.modules", {"mlx_whisper": mock_module})
+        return mock_module
 
     @pytest.fixture
     def mock_video_duration(self, mocker):
@@ -46,15 +27,16 @@ class TestTranscribeVideo:
             return_value=60.0,
         )
 
-    def test_transcribe_basic(self, mock_whisper_model, mock_video_duration):
+    def test_transcribe_basic(self, mock_mlx_whisper, mock_video_duration):
         """Test basic transcription."""
-        # Setup mock segments
-        mock_segments = [
-            MockSegment(0.0, 5.0, "Hello world"),
-            MockSegment(5.0, 10.0, "This is a test"),
-        ]
-        mock_info = MockTranscriptionInfo("en", 0.98)
-        mock_whisper_model.transcribe.return_value = (iter(mock_segments), mock_info)
+        # Setup mock result
+        mock_mlx_whisper.transcribe.return_value = {
+            "text": "Hello world This is a test",
+            "segments": [
+                {"start": 0.0, "end": 5.0, "text": "Hello world"},
+                {"start": 5.0, "end": 10.0, "text": "This is a test"},
+            ],
+        }
 
         # Call transcribe
         result = transcribe_video(
@@ -73,15 +55,14 @@ class TestTranscribeVideo:
         assert result[1].index == 1
         assert result[1].text == "This is a test"
 
-    def test_transcribe_strips_whitespace(
-        self, mock_whisper_model, mock_video_duration
-    ):
+    def test_transcribe_strips_whitespace(self, mock_mlx_whisper, mock_video_duration):
         """Test that text whitespace is stripped."""
-        mock_segments = [
-            MockSegment(0.0, 5.0, "  padded text  "),
-        ]
-        mock_info = MockTranscriptionInfo()
-        mock_whisper_model.transcribe.return_value = (iter(mock_segments), mock_info)
+        mock_mlx_whisper.transcribe.return_value = {
+            "text": "padded text",
+            "segments": [
+                {"start": 0.0, "end": 5.0, "text": "  padded text  "},
+            ],
+        }
 
         result = transcribe_video(
             input_path=Path("/fake/video.mp4"),
@@ -90,11 +71,12 @@ class TestTranscribeVideo:
 
         assert result[0].text == "padded text"
 
-    def test_transcribe_empty_video(self, mock_whisper_model, mock_video_duration):
+    def test_transcribe_empty_video(self, mock_mlx_whisper, mock_video_duration):
         """Test transcribing video with no speech."""
-        mock_segments = []
-        mock_info = MockTranscriptionInfo()
-        mock_whisper_model.transcribe.return_value = (iter(mock_segments), mock_info)
+        mock_mlx_whisper.transcribe.return_value = {
+            "text": "",
+            "segments": [],
+        }
 
         result = transcribe_video(
             input_path=Path("/fake/video.mp4"),
@@ -103,13 +85,14 @@ class TestTranscribeVideo:
 
         assert result == []
 
-    def test_transcribe_persian(self, mock_whisper_model, mock_video_duration):
+    def test_transcribe_persian(self, mock_mlx_whisper, mock_video_duration):
         """Test transcribing Persian content."""
-        mock_segments = [
-            MockSegment(0.0, 5.0, "سلام دنیا"),
-        ]
-        mock_info = MockTranscriptionInfo("fa", 0.95)
-        mock_whisper_model.transcribe.return_value = (iter(mock_segments), mock_info)
+        mock_mlx_whisper.transcribe.return_value = {
+            "text": "سلام دنیا",
+            "segments": [
+                {"start": 0.0, "end": 5.0, "text": "سلام دنیا"},
+            ],
+        }
 
         result = transcribe_video(
             input_path=Path("/fake/video.mp4"),
@@ -118,43 +101,46 @@ class TestTranscribeVideo:
 
         assert result[0].text == "سلام دنیا"
 
-    def test_transcribe_uses_vad_filter(self, mock_whisper_model, mock_video_duration):
-        """Test that VAD filter is enabled."""
-        mock_segments = []
-        mock_info = MockTranscriptionInfo()
-        mock_whisper_model.transcribe.return_value = (iter(mock_segments), mock_info)
-
-        transcribe_video(
-            input_path=Path("/fake/video.mp4"),
-            language="en",
-        )
-
-        # Check transcribe was called with vad_filter=True
-        call_kwargs = mock_whisper_model.transcribe.call_args[1]
-        assert call_kwargs.get("vad_filter") is True
-
-    def test_transcribe_passes_language(self, mock_whisper_model, mock_video_duration):
+    def test_transcribe_passes_language(self, mock_mlx_whisper, mock_video_duration):
         """Test that language parameter is passed correctly."""
-        mock_segments = []
-        mock_info = MockTranscriptionInfo()
-        mock_whisper_model.transcribe.return_value = (iter(mock_segments), mock_info)
+        mock_mlx_whisper.transcribe.return_value = {
+            "text": "",
+            "segments": [],
+        }
 
         transcribe_video(
             input_path=Path("/fake/video.mp4"),
             language="fa",
         )
 
-        call_kwargs = mock_whisper_model.transcribe.call_args[1]
+        call_kwargs = mock_mlx_whisper.transcribe.call_args[1]
         assert call_kwargs.get("language") == "fa"
 
-    def test_transcribe_with_progress(self, mock_whisper_model, mock_video_duration):
+    def test_transcribe_passes_model_repo(self, mock_mlx_whisper, mock_video_duration):
+        """Test that model repo is passed correctly."""
+        mock_mlx_whisper.transcribe.return_value = {
+            "text": "",
+            "segments": [],
+        }
+
+        transcribe_video(
+            input_path=Path("/fake/video.mp4"),
+            language="en",
+            model_size="turbo",
+        )
+
+        call_kwargs = mock_mlx_whisper.transcribe.call_args[1]
+        assert call_kwargs.get("path_or_hf_repo") == "mlx-community/whisper-turbo"
+
+    def test_transcribe_with_progress(self, mock_mlx_whisper, mock_video_duration):
         """Test transcription with progress callback."""
-        mock_segments = [
-            MockSegment(0.0, 30.0, "First half"),
-            MockSegment(30.0, 60.0, "Second half"),
-        ]
-        mock_info = MockTranscriptionInfo()
-        mock_whisper_model.transcribe.return_value = (iter(mock_segments), mock_info)
+        mock_mlx_whisper.transcribe.return_value = {
+            "text": "First half Second half",
+            "segments": [
+                {"start": 0.0, "end": 30.0, "text": "First half"},
+                {"start": 30.0, "end": 60.0, "text": "Second half"},
+            ],
+        }
 
         # Mock progress
         mock_progress = MagicMock()
@@ -171,16 +157,17 @@ class TestTranscribeVideo:
         # Progress should have been updated
         assert mock_progress.update.called
 
-    def test_transcribe_unknown_duration_defaults(self, mock_whisper_model, mocker):
+    def test_transcribe_unknown_duration_defaults(self, mock_mlx_whisper, mocker):
         """Test transcription when duration cannot be determined."""
         mocker.patch(
             "auto_clip.transcribe.get_video_duration",
             return_value=None,
         )
 
-        mock_segments = [MockSegment(0.0, 5.0, "Test")]
-        mock_info = MockTranscriptionInfo()
-        mock_whisper_model.transcribe.return_value = (iter(mock_segments), mock_info)
+        mock_mlx_whisper.transcribe.return_value = {
+            "text": "Test",
+            "segments": [{"start": 0.0, "end": 5.0, "text": "Test"}],
+        }
 
         # Should not raise, should use default duration
         result = transcribe_video(
@@ -190,53 +177,25 @@ class TestTranscribeVideo:
 
         assert len(result) == 1
 
-    def test_transcribe_model_fallback_to_cpu(self, mocker):
-        """Test fallback to CPU when GPU loading fails."""
-        mocker.patch(
-            "auto_clip.transcribe.get_video_duration",
-            return_value=60.0,
-        )
+    def test_transcribe_handles_error(self, mock_mlx_whisper, mock_video_duration):
+        """Test that transcription errors are properly wrapped."""
+        mock_mlx_whisper.transcribe.side_effect = Exception("MLX error")
 
-        mock_model_class = mocker.patch("auto_clip.transcribe.WhisperModel")
+        with pytest.raises(RuntimeError, match="Failed to transcribe"):
+            transcribe_video(
+                input_path=Path("/fake/video.mp4"),
+                language="en",
+            )
 
-        # First call (GPU) fails, second call (CPU) succeeds
-        mock_model = MagicMock()
-        mock_segments = [MockSegment(0.0, 5.0, "Test")]
-        mock_info = MockTranscriptionInfo()
-        mock_model.transcribe.return_value = (iter(mock_segments), mock_info)
-
-        call_count = [0]
-
-        def model_side_effect(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1 and kwargs.get("device") != "cpu":
-                raise RuntimeError("CUDA error")
-            return mock_model
-
-        mock_model_class.side_effect = model_side_effect
-
-        # Mock HAS_TORCH and torch at module level
-        mocker.patch("auto_clip.transcribe.HAS_TORCH", True)
-        mock_torch = MagicMock()
-        mock_torch.cuda.is_available.return_value = True
-        mocker.patch("auto_clip.transcribe.torch", mock_torch, create=True)
-
-        result = transcribe_video(
-            input_path=Path("/fake/video.mp4"),
-            language="en",
-        )
-
-        # Should have succeeded with fallback
-        assert len(result) == 1
-
-    def test_transcribe_many_segments(self, mock_whisper_model, mock_video_duration):
+    def test_transcribe_many_segments(self, mock_mlx_whisper, mock_video_duration):
         """Test transcribing video with many segments."""
-        mock_segments = [
-            MockSegment(i * 5.0, (i + 1) * 5.0, f"Segment {i}")
-            for i in range(100)
-        ]
-        mock_info = MockTranscriptionInfo()
-        mock_whisper_model.transcribe.return_value = (iter(mock_segments), mock_info)
+        mock_mlx_whisper.transcribe.return_value = {
+            "text": " ".join(f"Segment {i}" for i in range(100)),
+            "segments": [
+                {"start": i * 5.0, "end": (i + 1) * 5.0, "text": f"Segment {i}"}
+                for i in range(100)
+            ],
+        }
 
         result = transcribe_video(
             input_path=Path("/fake/video.mp4"),
@@ -246,3 +205,33 @@ class TestTranscribeVideo:
         assert len(result) == 100
         assert result[0].index == 0
         assert result[99].index == 99
+
+    def test_transcribe_word_timestamps_enabled(self, mock_mlx_whisper, mock_video_duration):
+        """Test that word timestamps are requested."""
+        mock_mlx_whisper.transcribe.return_value = {
+            "text": "",
+            "segments": [],
+        }
+
+        transcribe_video(
+            input_path=Path("/fake/video.mp4"),
+            language="en",
+        )
+
+        call_kwargs = mock_mlx_whisper.transcribe.call_args[1]
+        assert call_kwargs.get("word_timestamps") is True
+
+
+class TestModelRepos:
+    """Tests for MODEL_REPOS mapping."""
+
+    def test_all_standard_models_mapped(self):
+        """Test that all standard model sizes are mapped."""
+        expected_models = ["tiny", "small", "medium", "large", "large-v2", "large-v3", "turbo"]
+        for model in expected_models:
+            assert model in MODEL_REPOS
+            assert MODEL_REPOS[model].startswith("mlx-community/")
+
+    def test_turbo_is_default(self):
+        """Test that turbo model maps correctly."""
+        assert MODEL_REPOS["turbo"] == "mlx-community/whisper-turbo"
