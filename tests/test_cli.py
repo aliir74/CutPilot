@@ -545,7 +545,7 @@ class TestCheckpointResume:
         ])
 
         assert result.exit_code == 1
-        assert "transcript.json" in result.output
+        assert "--skip-transcription" in result.output
         assert "not found" in result.output
 
     def test_skip_analysis_loads_checkpoint(
