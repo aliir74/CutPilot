@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import re
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import requests
@@ -22,41 +24,86 @@ WINDOW_SIZE_SECONDS = 600  # 10 minutes
 OVERLAP_SECONDS = 60  # 1 minute overlap
 
 
-SYSTEM_PROMPT = """You are an assistant that analyzes video transcripts and \
-proposes clip ranges for social media shorts. Output ONLY valid JSON. Each clip must:
-- Be between {min_length} and {max_length} seconds
-- Start and end at natural speech boundaries (use the segment timestamps provided)
-- Be semantically coherent and engaging
-- Work standalone without extra context
+@dataclass
+class ClipAnalysisStats:
+    """Statistics for clip proposal analysis."""
 
-Output format:
+    windows_processed: int = 0
+    windows_empty_response: int = 0
+    windows_parse_failed: int = 0
+    total_clips_from_llm: int = 0
+    clips_rejected_duration: int = 0
+    clips_rejected_invalid_times: int = 0
+    clips_rejected_invalid_data: int = 0
+    clips_after_validation: int = 0
+    clips_after_dedup: int = 0
+    rejection_reasons: list = field(default_factory=list)
+
+
+# Enhanced system prompt for semantic clip detection
+SYSTEM_PROMPT = """You are an expert at analyzing video transcripts to find clips \
+suitable for social media shorts. You excel at understanding semantic topic boundaries.
+
+CLIP SELECTION CRITERIA:
+- Each clip must be between {min_length} and {max_length} seconds
+- Each clip should cover ONE complete topic or story
+- Clips must be self-contained and understandable without prior context
+- Start clips at topic transitions (when a new subject begins)
+- End clips when the topic naturally concludes
+
+SEMANTIC TOPIC DETECTION:
+- Look for subject matter changes, not just transition phrases
+- Topic transitions like "خبر بعدیمون" (our next news) or "از طرف دیگه" \
+(on the other hand) mark the START of a new potential clip
+- A change in the main subject being discussed indicates a new clip opportunity
+
+CONTENT TO AVOID:
+- Introduction/welcome sections at the start of videos
+- Subscribe/follow requests ("سابسکرایب", "فالو", "عضو بشین")
+- Channel promotion (Telegram links, Instagram mentions)
+- Incomplete explanations that end mid-thought
+- Transitional filler without substance
+
+PERSIAN LANGUAGE NOTES:
+- Understand mixed Persian-English tech terms (ای آی for AI, کود for code, etc.)
+- Recognize informal spoken Persian patterns
+- Provide titles and descriptions in the same language as the content
+
+Output ONLY valid JSON in this exact format:
 {{"clips": [{{"start": <float>, "end": <float>, "title": "<string>", \
-"description": "<string>", "reason": "<string>"}}]}}
+"description": "<string>", "reason": "<string explaining why this is a good clip>"}}]}}
 
-If no good clips are found, return: {{"clips": []}}"""
+If no clips meet the quality criteria, return: {{"clips": []}}"""
 
 
-USER_PROMPT = """Language: {language}
-Min length: {min_length}s, Max length: {max_length}s
+USER_PROMPT = """Content language: {language}
+Clip length constraints: {min_length}s - {max_length}s
 
-Transcript segments:
+TRANSCRIPT SEGMENTS (format: [index] start_time - end_time: text):
 {transcript}
 
-Find engaging, self-contained clips that would work well as social media shorts. \
-Return JSON only."""
+INSTRUCTIONS:
+1. Identify distinct topics/stories in the transcript by detecting semantic shifts
+2. For each substantive topic, evaluate if it makes a good standalone short
+3. Start clips where new topics begin (after transition phrases or subject changes)
+4. End clips where topics naturally conclude
+5. Skip promotional content, intros, and incomplete segments
+6. Each clip should tell ONE complete story or explain ONE concept
+
+Return your clip proposals as JSON only."""
 
 
 def call_openrouter_chat(
     model: str,
     messages: list[dict[str, str]],
-    temperature: float = 0.2,
+    temperature: float = 0.5,
 ) -> dict:
     """Call OpenRouter API.
 
     Args:
-        model: Model name (e.g., 'meta-llama/llama-3.1-8b-instruct:free').
+        model: Model name (e.g., 'openai/gpt-4o-mini').
         messages: List of message dicts with 'role' and 'content'.
-        temperature: Sampling temperature.
+        temperature: Sampling temperature (default 0.5 for balanced creativity).
 
     Returns:
         Parsed JSON response from the API.
@@ -73,11 +120,16 @@ def call_openrouter_chat(
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    payload = {
+    payload: dict = {
         "model": model,
         "messages": messages,
         "temperature": temperature,
+        "max_tokens": 4096,
     }
+
+    # Add JSON response format for supported models (OpenAI, some others)
+    if "openai" in model.lower() or "gpt" in model.lower():
+        payload["response_format"] = {"type": "json_object"}
 
     response = requests.post(
         OPENROUTER_URL, json=payload, headers=headers, timeout=120
@@ -217,14 +269,43 @@ def _deduplicate_clips(clips: list[ClipProposal]) -> list[ClipProposal]:
     return result
 
 
+def _diagnose_no_clips(stats: ClipAnalysisStats) -> str:
+    """Provide diagnosis for why no clips were proposed."""
+    if stats.total_clips_from_llm == 0:
+        if stats.windows_empty_response == stats.windows_processed:
+            return (
+                "LLM returned empty responses for all windows. "
+                "Check API key and model availability."
+            )
+        if stats.windows_parse_failed > 0:
+            return (
+                f"LLM response parsing failed for {stats.windows_parse_failed} "
+                "window(s). The model may not be following JSON format correctly."
+            )
+        return (
+            "LLM did not find any suitable clips. The content may not be suitable "
+            "for shorts, or try adjusting min/max length constraints."
+        )
+
+    if stats.clips_rejected_duration == stats.total_clips_from_llm:
+        return (
+            f"All {stats.total_clips_from_llm} clips rejected due to duration "
+            "constraints. Try adjusting --min-length and --max-length."
+        )
+
+    return "Clips proposed but filtered out during validation or deduplication."
+
+
 def propose_clips_with_llm(  # noqa: C901
     segments: list[TranscriptSegment],
     min_length: float,
     max_length: float,
     language: str,
     model_name: str,
+    temperature: float = 0.5,
     progress: "Progress | None" = None,
     task_id: "TaskID | None" = None,
+    debug_dir: "Path | None" = None,
 ) -> list[ClipProposal]:
     """Analyze transcript and propose clips via LLM.
 
@@ -234,8 +315,10 @@ def propose_clips_with_llm(  # noqa: C901
         max_length: Maximum clip length in seconds.
         language: Language code ('fa' or 'en').
         model_name: OpenRouter model name.
+        temperature: Sampling temperature for LLM.
         progress: Rich Progress instance for progress reporting.
         task_id: Task ID for progress updates.
+        debug_dir: Directory to save debug artifacts (if provided).
 
     Returns:
         List of ClipProposal objects.
@@ -244,8 +327,13 @@ def propose_clips_with_llm(  # noqa: C901
         ValueError: If API key is missing or LLM returns invalid response.
         requests.HTTPError: If API call fails.
     """
+    from .utils import save_debug_artifact
+
     if not segments:
         return []
+
+    # Initialize stats tracking
+    stats = ClipAnalysisStats()
 
     # Create windows for long videos
     windows = _create_windows(segments)
@@ -257,6 +345,8 @@ def propose_clips_with_llm(  # noqa: C901
     clip_counter = 0
 
     for window_idx, (window_segments, window_offset) in enumerate(windows):
+        stats.windows_processed += 1
+
         # Update progress
         if progress is not None and task_id is not None:
             pct = int((window_idx / total_windows) * 100)
@@ -264,6 +354,12 @@ def propose_clips_with_llm(  # noqa: C901
 
         # Format transcript for this window
         transcript_text = _format_transcript_window(window_segments)
+
+        # Debug: Save transcript being sent to LLM
+        if debug_dir:
+            save_debug_artifact(
+                debug_dir, "prompt_transcript", transcript_text, window_idx=window_idx
+            )
 
         # Build prompts
         system_prompt = SYSTEM_PROMPT.format(
@@ -285,22 +381,63 @@ def propose_clips_with_llm(  # noqa: C901
         logger.info(f"Calling LLM for window {window_idx + 1}/{total_windows}")
 
         # Call LLM
-        response = call_openrouter_chat(model_name, messages)
+        response = call_openrouter_chat(model_name, messages, temperature=temperature)
+
+        # Debug: Save raw LLM response
+        if debug_dir:
+            save_debug_artifact(
+                debug_dir, "llm_response_raw", response, window_idx=window_idx
+            )
 
         # Extract content
-        content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+        content = (
+            response.get("choices", [{}])[0].get("message", {}).get("content", "")
+        )
+
+        # Debug: Save extracted content
+        if debug_dir:
+            save_debug_artifact(
+                debug_dir,
+                "llm_content",
+                content if content else "(EMPTY RESPONSE)",
+                window_idx=window_idx,
+            )
+
         if not content:
             logger.warning(f"Empty response from LLM for window {window_idx + 1}")
+            stats.windows_empty_response += 1
             continue
 
         # Parse response
         try:
             raw_clips = _parse_llm_response(content)
+
+            # Debug: Save parsed clips
+            if debug_dir:
+                save_debug_artifact(
+                    debug_dir,
+                    "parsed_clips",
+                    {"parsed_count": len(raw_clips), "clips": raw_clips},
+                    window_idx=window_idx,
+                )
+
         except ValueError as e:
             logger.warning(
                 f"Failed to parse LLM response for window {window_idx + 1}: {e}"
             )
+            stats.windows_parse_failed += 1
+
+            # Debug: Save parse error
+            if debug_dir:
+                save_debug_artifact(
+                    debug_dir,
+                    "parse_error",
+                    {"error": str(e), "raw_content": content[:2000]},
+                    window_idx=window_idx,
+                )
             continue
+
+        stats.total_clips_from_llm += len(raw_clips)
 
         # Convert to ClipProposal objects
         for clip_data in raw_clips:
@@ -314,9 +451,23 @@ def propose_clips_with_llm(  # noqa: C901
                     logger.debug(
                         f"Skipping clip with invalid duration: {duration:.1f}s"
                     )
+                    stats.clips_rejected_duration += 1
+                    stats.rejection_reasons.append(
+                        {
+                            "reason": "duration",
+                            "start": start,
+                            "end": end,
+                            "duration": duration,
+                            "allowed": f"{min_length * 0.8:.1f}-{max_length * 1.2:.1f}",
+                        }
+                    )
                     continue
 
                 if end <= start:
+                    stats.clips_rejected_invalid_times += 1
+                    stats.rejection_reasons.append(
+                        {"reason": "invalid_times", "start": start, "end": end}
+                    )
                     continue
 
                 clip_counter += 1
@@ -332,14 +483,42 @@ def propose_clips_with_llm(  # noqa: C901
 
             except (ValueError, TypeError) as e:
                 logger.debug(f"Skipping invalid clip data: {e}")
+                stats.clips_rejected_invalid_data += 1
                 continue
+
+    stats.clips_after_validation = len(all_clips)
 
     # Deduplicate overlapping clips
     deduplicated = _deduplicate_clips(all_clips)
+    stats.clips_after_dedup = len(deduplicated)
 
     # Re-index clips
     for idx, clip in enumerate(deduplicated, 1):
         clip.clip_index = idx
 
     logger.info(f"Proposed {len(deduplicated)} clips (from {len(all_clips)} raw)")
+
+    # Debug: Save analysis summary
+    if debug_dir:
+        summary = {
+            "model": model_name,
+            "temperature": temperature,
+            "windows_count": total_windows,
+            "stats": {
+                "windows_processed": stats.windows_processed,
+                "windows_empty_response": stats.windows_empty_response,
+                "windows_parse_failed": stats.windows_parse_failed,
+                "total_clips_from_llm": stats.total_clips_from_llm,
+                "clips_rejected_duration": stats.clips_rejected_duration,
+                "clips_rejected_invalid_times": stats.clips_rejected_invalid_times,
+                "clips_rejected_invalid_data": stats.clips_rejected_invalid_data,
+                "clips_after_validation": stats.clips_after_validation,
+                "clips_after_dedup": stats.clips_after_dedup,
+            },
+            "rejection_details": stats.rejection_reasons[:20],
+            "final_clips": [c.to_dict() for c in deduplicated],
+            "diagnosis": _diagnose_no_clips(stats) if not deduplicated else None,
+        }
+        save_debug_artifact(debug_dir, "analysis_summary", summary)
+
     return deduplicated

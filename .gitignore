@@ -41,6 +41,7 @@ htmlcov/
 
 # Output directories (generated clips and transcripts)
 clips/
+my-clips/
 *.mp4
 *.mp3
 *.wav

@@ -10,6 +10,7 @@ import pytest
 
 from auto_clip.utils import (
     check_dependencies,
+    check_parameter_mismatch,
     format_timestamp,
     get_video_duration,
     load_json,
@@ -332,3 +333,85 @@ class TestFormatTimestamp:
         # but the function should still return something
         result = format_timestamp(-1)
         assert isinstance(result, str)
+
+
+class TestCheckParameterMismatch:
+    """Tests for check_parameter_mismatch function."""
+
+    def test_no_mismatch_returns_empty(self):
+        """Test that matching parameters return no warnings."""
+        checkpoint = {"language": "fa", "whisper_model": "turbo"}
+        current = {"language": "fa", "whisper_model": "turbo"}
+
+        warnings = check_parameter_mismatch(checkpoint, current, "transcript.json")
+
+        assert warnings == []
+
+    def test_detects_single_mismatch(self):
+        """Test detection of a single parameter mismatch."""
+        checkpoint = {"language": "en", "whisper_model": "turbo"}
+        current = {"language": "fa", "whisper_model": "turbo"}
+
+        warnings = check_parameter_mismatch(checkpoint, current, "transcript.json")
+
+        assert len(warnings) == 1
+        assert "language" in warnings[0]
+        assert "'en'" in warnings[0]
+        assert "'fa'" in warnings[0]
+
+    def test_detects_multiple_mismatches(self):
+        """Test detection of multiple parameter mismatches."""
+        checkpoint = {"language": "en", "whisper_model": "medium"}
+        current = {"language": "fa", "whisper_model": "turbo"}
+
+        warnings = check_parameter_mismatch(checkpoint, current, "transcript.json")
+
+        assert len(warnings) == 2
+
+    def test_ignores_missing_checkpoint_fields(self):
+        """Test that missing fields in checkpoint are ignored."""
+        checkpoint = {"language": "fa"}  # No whisper_model
+        current = {"language": "fa", "whisper_model": "turbo"}
+
+        warnings = check_parameter_mismatch(checkpoint, current, "transcript.json")
+
+        assert warnings == []
+
+    def test_includes_checkpoint_name_in_message(self):
+        """Test that warning includes the checkpoint filename."""
+        checkpoint = {"language": "en"}
+        current = {"language": "fa"}
+
+        warnings = check_parameter_mismatch(checkpoint, current, "my_checkpoint.json")
+
+        assert "my_checkpoint.json" in warnings[0]
+
+    def test_handles_numeric_values(self):
+        """Test mismatch detection with numeric values."""
+        checkpoint = {"min_length": 25, "max_length": 90}
+        current = {"min_length": 30, "max_length": 90}
+
+        warnings = check_parameter_mismatch(checkpoint, current, "clips.json")
+
+        assert len(warnings) == 1
+        assert "min_length" in warnings[0]
+        assert "'25'" in warnings[0]
+        assert "'30'" in warnings[0]
+
+    def test_empty_checkpoint(self):
+        """Test with empty checkpoint (no fields to check)."""
+        checkpoint = {}
+        current = {"language": "fa", "whisper_model": "turbo"}
+
+        warnings = check_parameter_mismatch(checkpoint, current, "transcript.json")
+
+        assert warnings == []
+
+    def test_empty_current_params(self):
+        """Test with empty current parameters."""
+        checkpoint = {"language": "fa", "whisper_model": "turbo"}
+        current = {}
+
+        warnings = check_parameter_mismatch(checkpoint, current, "transcript.json")
+
+        assert warnings == []
