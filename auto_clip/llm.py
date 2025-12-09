@@ -42,38 +42,55 @@ class ClipAnalysisStats:
 
 # Enhanced system prompt for semantic clip detection
 SYSTEM_PROMPT = """You are an expert at analyzing video transcripts to find clips \
-suitable for social media shorts. You excel at understanding semantic topic boundaries.
+suitable for social media shorts. Your goal is to find engaging, self-contained clips.
 
 CLIP SELECTION CRITERIA:
 - Each clip must be between {min_length} and {max_length} seconds
-- Each clip should cover ONE complete topic or story
-- Clips must be self-contained and understandable without prior context
-- Start clips at topic transitions (when a new subject begins)
-- End clips when the topic naturally concludes
+- Each clip should cover a coherent topic with a clear beginning and end
+- Include supporting content: examples, personal anecdotes, analysis
+- Clips should be CONTINUOUS - avoid skipping over related content
 
-SEMANTIC TOPIC DETECTION:
-- Look for subject matter changes, not just transition phrases
-- Topic transitions like "خبر بعدیمون" (our next news) or "از طرف دیگه" \
-(on the other hand) mark the START of a new potential clip
-- A change in the main subject being discussed indicates a new clip opportunity
+KEY PRINCIPLE: INCLUDE SUPPORTING CONTENT
+When you find an interesting topic, include ALL related content:
+- Personal experiences or anecdotes about the topic
+- Examples that illustrate the point
+- Analysis or commentary
+- The speaker's opinions and conclusions
+
+DO NOT create separate clips for different parts of the SAME topic:
+- BAD: Clip 1 = "research findings", Clip 2 = "personal experience about same research"
+- GOOD: ONE clip that includes both the findings AND the personal experience
+
+WHEN TO START A NEW CLIP:
+- Explicit news transitions: "خبر بعدیمون" (next news), "بریم سراغ" (let's go to)
+- Clear subject changes: AI topic ends, cryptocurrency topic begins
+- Natural topic boundaries where the speaker moves to something unrelated
+
+WHEN TO KEEP CONTENT IN THE SAME CLIP:
+- Facts + personal experience on same topic = ONE CLIP
+- Research findings + speaker's analysis = ONE CLIP
+- A topic + examples illustrating it = ONE CLIP
+
+HANDLING LONG TOPICS (exceeding {max_length} seconds):
+- Find a natural break point to split into 2 clips maximum
+- Each part should make sense on its own
+- Avoid fragmenting into 3+ tiny clips
 
 CONTENT TO AVOID:
-- Introduction/welcome sections at the start of videos
+- Introduction/welcome sections
 - Subscribe/follow requests ("سابسکرایب", "فالو", "عضو بشین")
-- Channel promotion (Telegram links, Instagram mentions)
-- Incomplete explanations that end mid-thought
-- Transitional filler without substance
+- Channel promotion (Telegram, Instagram)
+- Incomplete thoughts that end mid-explanation
 
 PERSIAN LANGUAGE NOTES:
-- Understand mixed Persian-English tech terms (ای آی for AI, کود for code, etc.)
-- Recognize informal spoken Persian patterns
-- Provide titles and descriptions in the same language as the content
+- Understand mixed Persian-English tech terms (ای آی for AI, کود for code)
+- Provide titles and descriptions in Persian
 
-Output ONLY valid JSON in this exact format:
+Output ONLY valid JSON:
 {{"clips": [{{"start": <float>, "end": <float>, "title": "<string>", \
-"description": "<string>", "reason": "<string explaining why this is a good clip>"}}]}}
+"description": "<string>", "reason": "<string>"}}]}}
 
-If no clips meet the quality criteria, return: {{"clips": []}}"""
+If no suitable clips exist, return: {{"clips": []}}"""
 
 
 USER_PROMPT = """Content language: {language}
@@ -83,12 +100,25 @@ TRANSCRIPT SEGMENTS (format: [index] start_time - end_time: text):
 {transcript}
 
 INSTRUCTIONS:
-1. Identify distinct topics/stories in the transcript by detecting semantic shifts
-2. For each substantive topic, evaluate if it makes a good standalone short
-3. Start clips where new topics begin (after transition phrases or subject changes)
-4. End clips where topics naturally conclude
-5. Skip promotional content, intros, and incomplete segments
-6. Each clip should tell ONE complete story or explain ONE concept
+1. Find engaging topics that would make good social media clips
+
+2. For each topic, include ALL related content:
+   - The main point/news
+   - Personal experiences or anecdotes
+   - Examples and analysis
+   - Speaker's conclusions
+
+3. Calculate the duration of the full topic (from intro to conclusion)
+
+4. If duration <= {max_length}s: Create ONE clip with everything included
+
+5. If duration > {max_length}s: Split into exactly 2 clips at a natural boundary
+   - Each part should be understandable on its own
+
+6. IMPORTANT - avoid these mistakes:
+   - Creating multiple small clips from ONE topic (fragmentation)
+   - Skipping personal anecdotes that relate to the topic
+   - Creating gaps between related content
 
 Return your clip proposals as JSON only."""
 
