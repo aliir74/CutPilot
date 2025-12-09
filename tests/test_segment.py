@@ -74,6 +74,52 @@ class TestTranscriptSegment:
         assert segment.text == ""
         assert segment.to_dict()["text"] == ""
 
+    def test_from_dict(self):
+        """Test creating TranscriptSegment from dictionary."""
+        data = {
+            "index": 5,
+            "start": 100.0,
+            "end": 150.5,
+            "text": "Hello world",
+        }
+
+        segment = TranscriptSegment.from_dict(data)
+
+        assert segment.index == 5
+        assert segment.start == 100.0
+        assert segment.end == 150.5
+        assert segment.text == "Hello world"
+
+    def test_from_dict_round_trip(self):
+        """Test that to_dict -> from_dict preserves data."""
+        original = TranscriptSegment(
+            index=10,
+            start=200.5,
+            end=250.0,
+            text="Some text here",
+        )
+
+        data = original.to_dict()
+        restored = TranscriptSegment.from_dict(data)
+
+        assert restored.index == original.index
+        assert restored.start == original.start
+        assert restored.end == original.end
+        assert restored.text == original.text
+
+    def test_from_dict_with_unicode(self):
+        """Test from_dict with Unicode text."""
+        data = {
+            "index": 0,
+            "start": 0.0,
+            "end": 5.0,
+            "text": "سلام دنیا",
+        }
+
+        segment = TranscriptSegment.from_dict(data)
+
+        assert segment.text == "سلام دنیا"
+
 
 class TestClipProposal:
     """Tests for ClipProposal dataclass."""
@@ -174,3 +220,63 @@ class TestClipProposal:
         )
 
         assert clip.duration == pytest.approx(44.435, rel=1e-3)
+
+    def test_from_dict(self):
+        """Test creating ClipProposal from dictionary."""
+        data = {
+            "clip_index": 3,
+            "start": 100.5,
+            "end": 145.0,
+            "title": "Great moment",
+            "description": "A great moment",
+            "reason": "Engaging",
+            "duration": 44.5,  # Should be ignored - computed property
+        }
+
+        clip = ClipProposal.from_dict(data)
+
+        assert clip.clip_index == 3
+        assert clip.start == 100.5
+        assert clip.end == 145.0
+        assert clip.title == "Great moment"
+        assert clip.description == "A great moment"
+        assert clip.reason == "Engaging"
+        assert clip.duration == 44.5
+
+    def test_from_dict_round_trip(self):
+        """Test that to_dict -> from_dict preserves data."""
+        original = ClipProposal(
+            clip_index=5,
+            start=200.0,
+            end=250.5,
+            title="Test clip",
+            description="Description",
+            reason="Reason",
+        )
+
+        data = original.to_dict()
+        restored = ClipProposal.from_dict(data)
+
+        assert restored.clip_index == original.clip_index
+        assert restored.start == original.start
+        assert restored.end == original.end
+        assert restored.title == original.title
+        assert restored.description == original.description
+        assert restored.reason == original.reason
+
+    def test_from_dict_with_unicode(self):
+        """Test from_dict with Unicode characters."""
+        data = {
+            "clip_index": 1,
+            "start": 0.0,
+            "end": 30.0,
+            "title": "عنوان فارسی",
+            "description": "توضیحات",
+            "reason": "دلیل",
+        }
+
+        clip = ClipProposal.from_dict(data)
+
+        assert clip.title == "عنوان فارسی"
+        assert clip.description == "توضیحات"
+        assert clip.reason == "دلیل"

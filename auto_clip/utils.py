@@ -95,3 +95,63 @@ def format_timestamp(seconds: float) -> str:
     hours, remainder = divmod(int(seconds), 3600)
     minutes, secs = divmod(remainder, 60)
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def save_debug_artifact(
+    output_dir: Path,
+    name: str,
+    content: str | dict | list,
+    window_idx: int | None = None,
+) -> Path:
+    """Save debug artifact to debug subdirectory.
+
+    Args:
+        output_dir: Base output directory.
+        name: Name of the artifact (without extension).
+        content: Content to save (string or JSON-serializable data).
+        window_idx: Optional window index for multi-window artifacts.
+
+    Returns:
+        Path to the saved artifact.
+    """
+    debug_dir = output_dir / "debug"
+    debug_dir.mkdir(exist_ok=True)
+
+    suffix = f"_window{window_idx}" if window_idx is not None else ""
+    is_json = isinstance(content, (dict, list))
+    filename = f"{name}{suffix}.json" if is_json else f"{name}{suffix}.txt"
+
+    filepath = debug_dir / filename
+    if is_json:
+        save_json(content, filepath)
+    else:
+        filepath.write_text(str(content), encoding="utf-8")
+
+    return filepath
+
+
+def check_parameter_mismatch(
+    checkpoint: dict,
+    current_params: dict[str, Any],
+    checkpoint_name: str,
+) -> list[str]:
+    """Check for parameter mismatches between checkpoint and current run.
+
+    Args:
+        checkpoint: Loaded checkpoint data.
+        current_params: Current CLI parameters to compare.
+        checkpoint_name: Name of checkpoint file for messages.
+
+    Returns:
+        List of warning messages for mismatched parameters.
+    """
+    warnings = []
+    for param_name, current_value in current_params.items():
+        if param_name in checkpoint:
+            saved_value = checkpoint[param_name]
+            if saved_value != current_value:
+                warnings.append(
+                    f"Parameter mismatch in {checkpoint_name}: "
+                    f"{param_name} was '{saved_value}', now '{current_value}'"
+                )
+    return warnings

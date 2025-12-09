@@ -16,6 +16,16 @@ class TranscriptSegment:
         """Convert to dictionary for JSON serialization."""
         return asdict(self)
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "TranscriptSegment":
+        """Create from dictionary (JSON deserialization)."""
+        return cls(
+            index=data["index"],
+            start=data["start"],
+            end=data["end"],
+            text=data["text"],
+        )
+
 
 @dataclass
 class ClipProposal:
@@ -36,3 +46,15 @@ class ClipProposal:
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
         return {**asdict(self), "duration": self.duration}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ClipProposal":
+        """Create from dictionary (JSON deserialization)."""
+        return cls(
+            clip_index=data["clip_index"],
+            start=data["start"],
+            end=data["end"],
+            title=data["title"],
+            description=data["description"],
+            reason=data["reason"],
+        )
