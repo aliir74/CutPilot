@@ -206,7 +206,9 @@ class TestTranscribeVideo:
         assert result[0].index == 0
         assert result[99].index == 99
 
-    def test_transcribe_word_timestamps_enabled(self, mock_mlx_whisper, mock_video_duration):
+    def test_transcribe_word_timestamps_enabled(
+        self, mock_mlx_whisper, mock_video_duration
+    ):
         """Test that word timestamps are requested."""
         mock_mlx_whisper.transcribe.return_value = {
             "text": "",
@@ -227,7 +229,9 @@ class TestModelRepos:
 
     def test_all_standard_models_mapped(self):
         """Test that all standard model sizes are mapped."""
-        expected_models = ["tiny", "small", "medium", "large", "large-v2", "large-v3", "turbo"]
+        expected_models = [
+            "tiny", "small", "medium", "large", "large-v2", "large-v3", "turbo"
+        ]
         for model in expected_models:
             assert model in MODEL_REPOS
             assert MODEL_REPOS[model].startswith("mlx-community/")
