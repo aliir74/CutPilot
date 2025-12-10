@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "setup": "# Copy configuration files\ncp \"$CONDUCTOR_ROOT_PATH/.env\" .\n\ncp -r \"$CONDUCTOR_ROOT_PATH/.claude\" .\nuv venv\nsource .venv/bin/activate\nuv sync\n\n\n",
+    "run": ""
+  }
+}
