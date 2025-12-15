@@ -188,6 +188,8 @@ class TestClipProposal:
             "title": "My clip",
             "description": "Description here",
             "reason": "Good reason",
+            "caption_instagram": "",
+            "caption_youtube": "",
             "duration": 60.0,
         }
 

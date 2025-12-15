@@ -37,6 +37,8 @@ class ClipProposal:
     title: str
     description: str
     reason: str
+    caption_instagram: str = ""  # Persian caption for Instagram Reels
+    caption_youtube: str = ""  # Persian caption for YouTube Shorts
 
     @property
     def duration(self) -> float:
@@ -57,4 +59,6 @@ class ClipProposal:
             title=data["title"],
             description=data["description"],
             reason=data["reason"],
+            caption_instagram=data.get("caption_instagram", ""),
+            caption_youtube=data.get("caption_youtube", ""),
         )

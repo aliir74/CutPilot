@@ -13,9 +13,16 @@ from rich.progress import (
     TextColumn,
 )
 
+from .coverage import validate_coverage
 from .cutting import cut_clips
 from .llm import propose_clips_with_llm
 from .segment import ClipProposal, TranscriptSegment
+from .topic_detection import (
+    TopicDetectionResult,
+    create_disabled_result,
+    create_manual_result,
+    detect_topics_llm,
+)
 from .transcribe import transcribe_video, transcribe_video_elevenlabs
 from .utils import (
     check_dependencies,
@@ -121,6 +128,26 @@ def main(  # noqa: C901
         False,
         "--force",
         help="Force regeneration of all steps, ignoring existing checkpoints.",
+    ),
+    expected_topics: int = typer.Option(
+        None,
+        "--expected-topics",
+        help="Manual override: expected number of topics/clips. Skips auto-detection.",
+    ),
+    news_mode: bool = typer.Option(
+        True,
+        "--news-mode/--no-news-mode",
+        help="Enable topic detection for news content (default: enabled).",
+    ),
+    auto_retry: bool = typer.Option(
+        False,
+        "--auto-retry",
+        help="Retry clip generation once if coverage is insufficient.",
+    ),
+    min_coverage: float = typer.Option(
+        0.7,
+        "--min-coverage",
+        help="Minimum clips/topics ratio before warning (0.0-1.0).",
     ),
 ) -> None:
     """Auto-clip: Create short clips from long-form video.
@@ -317,6 +344,41 @@ def main(  # noqa: C901
             )
             console.print(f"[green]Transcribed {len(segments)} segments[/green]")
 
+        # Topic Detection Phase (before LLM analysis)
+        topic_result: TopicDetectionResult | None = None
+        if not skip_analysis:
+            if expected_topics is not None:
+                # Manual override via --expected-topics
+                topic_result = create_manual_result(expected_topics)
+                console.print(f"[cyan]Using manual topic count: {expected_topics}[/cyan]")
+            elif news_mode:
+                # Auto-detect topics for news content
+                topic_task = progress.add_task("Detecting topics...", total=100)
+                try:
+                    topic_result = detect_topics_llm(
+                        segments=segments,
+                        language=language,
+                        model_name="openai/gpt-4o-mini",
+                    )
+                    progress.update(topic_task, completed=100)
+                    console.print(
+                        f"[cyan]Detected ~{topic_result.expected_topics} topics "
+                        f"(confidence: {topic_result.confidence:.0%}, "
+                        f"method: {topic_result.method})[/cyan]"
+                    )
+                    if topic_result.topic_titles:
+                        for i, title in enumerate(topic_result.topic_titles[:5], 1):
+                            console.print(f"  [dim]{i}. {title}[/dim]")
+                except Exception as e:
+                    progress.update(topic_task, completed=100)
+                    console.print(
+                        f"[yellow]Topic detection failed: {e}. Continuing without.[/yellow]"
+                    )
+                    topic_result = create_disabled_result()
+            else:
+                # News mode disabled
+                topic_result = create_disabled_result()
+
         # Step 2: LLM analysis (conditionally)
         if run_analysis:
             analyze_task = progress.add_task("Analyzing transcript...", total=100)
@@ -328,6 +390,11 @@ def main(  # noqa: C901
                     language=language,
                     model_name=model_name,
                     temperature=temperature,
+                    expected_topics=(
+                        topic_result.expected_topics
+                        if topic_result and topic_result.expected_topics > 0
+                        else None
+                    ),
                     progress=progress,
                     task_id=analyze_task,
                     debug_dir=output_dir if debug else None,
@@ -372,6 +439,85 @@ def main(  # noqa: C901
                     )
             else:
                 console.print(f"[green]Proposed {len(clips)} clips[/green]")
+
+            # Coverage Validation
+            if topic_result and topic_result.expected_topics > 0:
+                coverage_result = validate_coverage(
+                    clips=clips,
+                    expected_topics=topic_result.expected_topics,
+                    segments=segments,
+                    min_coverage_ratio=min_coverage,
+                )
+
+                if not coverage_result.passed:
+                    console.print("[yellow]Coverage validation warnings:[/yellow]")
+                    for warning in coverage_result.warnings:
+                        console.print(f"  [yellow]⚠ {warning}[/yellow]")
+
+                    # Optional retry
+                    if auto_retry and coverage_result.coverage_ratio < min_coverage:
+                        console.print(
+                            "[cyan]Retrying with increased guidance...[/cyan]"
+                        )
+                        retry_task = progress.add_task(
+                            "Retrying analysis...", total=100
+                        )
+                        try:
+                            clips = propose_clips_with_llm(
+                                segments=segments,
+                                min_length=min_length,
+                                max_length=max_length,
+                                language=language,
+                                model_name=model_name,
+                                temperature=temperature + 0.1,
+                                expected_topics=topic_result.expected_topics + 2,
+                                progress=progress,
+                                task_id=retry_task,
+                                debug_dir=output_dir if debug else None,
+                            )
+                            progress.update(retry_task, completed=100)
+
+                            # Re-validate
+                            coverage_result = validate_coverage(
+                                clips=clips,
+                                expected_topics=topic_result.expected_topics,
+                                segments=segments,
+                                min_coverage_ratio=min_coverage,
+                            )
+                            if coverage_result.passed:
+                                console.print(
+                                    f"[green]Retry successful! "
+                                    f"Now {len(clips)} clips[/green]"
+                                )
+                            else:
+                                console.print(
+                                    "[yellow]Retry improved but did not fully "
+                                    "resolve coverage.[/yellow]"
+                                )
+
+                            # Save updated clips
+                            save_json(
+                                {
+                                    "video": str(input_path.name),
+                                    "model_name": model_name,
+                                    "min_length": min_length,
+                                    "max_length": max_length,
+                                    "clips": [c.to_dict() for c in clips],
+                                },
+                                clips_path,
+                            )
+                        except Exception as e:
+                            progress.update(retry_task, completed=100)
+                            console.print(
+                                f"[yellow]Retry failed: {e}. "
+                                f"Using original clips.[/yellow]"
+                            )
+                else:
+                    console.print(
+                        f"[green]Coverage validated: {coverage_result.clip_count} clips "
+                        f"for ~{coverage_result.expected_topics} topics "
+                        f"(ratio: {coverage_result.coverage_ratio:.0%})[/green]"
+                    )
 
         # Dry run: just show proposed clips
         if dry_run:
@@ -436,10 +582,31 @@ def main(  # noqa: C901
             clips_path,
         )
 
+    # Write separate caption files for each clip
+    caption_files_written = 0
+    for clip in clips:
+        try:
+            if clip.caption_instagram and clip.caption_instagram != "None":
+                caption_file = output_dir / f"clip_{clip.clip_index:03d}_instagram.txt"
+                caption_file.write_text(clip.caption_instagram, encoding="utf-8")
+                caption_files_written += 1
+
+            if clip.caption_youtube and clip.caption_youtube != "None":
+                caption_file = output_dir / f"clip_{clip.clip_index:03d}_youtube.txt"
+                caption_file.write_text(clip.caption_youtube, encoding="utf-8")
+                caption_files_written += 1
+        except OSError as e:
+            console.print(
+                f"[yellow]Warning: Failed to write caption file for "
+                f"clip {clip.clip_index}: {e}[/yellow]"
+            )
+
     # Summary
     console.print("\n[bold green]Done![/bold green]")
     if run_cutting and output_paths:
         console.print(f"  Created {len(output_paths)} clips in {output_dir}")
+    if caption_files_written > 0:
+        console.print(f"  Created {caption_files_written} caption files")
     console.print(f"  Transcript: {transcript_path.name}")
     console.print("  Metadata: clips.json")
 

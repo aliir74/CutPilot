@@ -86,9 +86,42 @@ PERSIAN LANGUAGE NOTES:
 - Understand mixed Persian-English tech terms (ای آی for AI, کود for code)
 - Provide titles and descriptions in Persian
 
+CAPTION GENERATION (REQUIRED FOR EACH CLIP):
+For each clip, generate two Persian captions for social media:
+
+1. caption_instagram: Caption for Instagram Reels
+   - Short, punchy, conversational Persian
+   - Emotional hook - surprising statement or rhetorical question
+   - 1-2 emojis at end of main text
+   - Hashtags on a NEW LINE after the main text
+   - 1-3 Persian hashtags with underscores (e.g., #هوش_مصنوعی #فرانت_اند #خبر)
+
+   EXAMPLES:
+   "از این به بعد فقط مجبوریم react بزنیم 😢😭\\n\\n#هوش_مصنوعی #فرانت_اند #خبر"
+   "اگه حواسمون نباشه هوش مصنوعی بدتر خنگ‌مون میکنه 🤖🥹\\n\\n#هوش_مصنوعی #یادگیری"
+   "حتی تست‌هات رو نباید بدی ai بنویسه. پس به چه دردی می‌خوره؟ 🤨\\n\\n#هوش_مصنوعی #کد"
+
+2. caption_youtube: Caption for YouTube Shorts
+   - Very short - headline/hook style (ONE line only)
+   - NO hashtags
+   - 1-2 emojis at the end
+   - Like a clickable title that creates curiosity
+
+   EXAMPLES:
+   "کرسر ۳۰ میلیارد دلار شد؟؟ 🔥👨‍💻"
+   "هوش مصنوعی قاضی 😂"
+   "تا ai agent خودتو ننویسی به درد نمی‌خوره 🤨"
+
+CAPTION TONE:
+- Conversational Persian (not formal)
+- Human-written feel, not robotic
+- Create curiosity/surprise
+- Can use mixed Persian-English terms (ai, react, agent, etc.)
+
 Output ONLY valid JSON:
 {{"clips": [{{"start": <float>, "end": <float>, "title": "<string>", \
-"description": "<string>", "reason": "<string>"}}]}}
+"description": "<string>", "reason": "<string>", \
+"caption_instagram": "<string>", "caption_youtube": "<string>"}}]}}
 
 If no suitable clips exist, return: {{"clips": []}}"""
 
@@ -120,7 +153,24 @@ INSTRUCTIONS:
    - Skipping personal anecdotes that relate to the topic
    - Creating gaps between related content
 
+7. For EACH clip, write two Persian captions:
+   - caption_instagram: Short hook + 1-2 emojis + newline + 1-3 Persian hashtags
+   - caption_youtube: Very short headline/hook + 1-2 emojis (NO hashtags)
+   - Make captions feel human-written, funny, and conversational
+
 Return your clip proposals as JSON only."""
+
+
+# Coverage guidance added when expected_topics is provided
+TOPIC_COVERAGE_GUIDANCE = """
+
+COVERAGE REQUIREMENT:
+This content contains approximately {expected_topics} distinct topics/stories.
+You MUST generate AT LEAST {expected_topics} clips to ensure comprehensive coverage.
+- Each major topic should have at least one clip
+- Err on the side of proposing MORE clips (system will deduplicate)
+- Do NOT leave important content without a clip
+"""
 
 
 def call_openrouter_chat(
@@ -333,6 +383,7 @@ def propose_clips_with_llm(  # noqa: C901
     language: str,
     model_name: str,
     temperature: float = 0.5,
+    expected_topics: int | None = None,
     progress: "Progress | None" = None,
     task_id: "TaskID | None" = None,
     debug_dir: "Path | None" = None,
@@ -346,6 +397,7 @@ def propose_clips_with_llm(  # noqa: C901
         language: Language code ('fa' or 'en').
         model_name: OpenRouter model name.
         temperature: Sampling temperature for LLM.
+        expected_topics: Expected number of topics/clips (for coverage guidance).
         progress: Rich Progress instance for progress reporting.
         task_id: Task ID for progress updates.
         debug_dir: Directory to save debug artifacts (if provided).
@@ -396,6 +448,13 @@ def propose_clips_with_llm(  # noqa: C901
             min_length=min_length,
             max_length=max_length,
         )
+
+        # Inject coverage guidance if expected_topics provided
+        if expected_topics is not None and expected_topics > 0:
+            system_prompt += TOPIC_COVERAGE_GUIDANCE.format(
+                expected_topics=expected_topics
+            )
+
         user_prompt = USER_PROMPT.format(
             language=language,
             min_length=min_length,
@@ -508,6 +567,8 @@ def propose_clips_with_llm(  # noqa: C901
                     title=str(clip_data.get("title", f"Clip {clip_counter}")),
                     description=str(clip_data.get("description", "")),
                     reason=str(clip_data.get("reason", "")),
+                    caption_instagram=str(clip_data.get("caption_instagram", "")),
+                    caption_youtube=str(clip_data.get("caption_youtube", "")),
                 )
                 all_clips.append(clip)
 
