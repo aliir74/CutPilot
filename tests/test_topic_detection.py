@@ -2,8 +2,6 @@
 
 import json
 
-import pytest
-
 from auto_clip.segment import TranscriptSegment
 from auto_clip.topic_detection import (
     TopicDetectionResult,

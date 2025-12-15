@@ -350,7 +350,9 @@ def main(  # noqa: C901
             if expected_topics is not None:
                 # Manual override via --expected-topics
                 topic_result = create_manual_result(expected_topics)
-                console.print(f"[cyan]Using manual topic count: {expected_topics}[/cyan]")
+                console.print(
+                    f"[cyan]Using manual topic count: {expected_topics}[/cyan]"
+                )
             elif news_mode:
                 # Auto-detect topics for news content
                 topic_task = progress.add_task("Detecting topics...", total=100)
@@ -372,7 +374,8 @@ def main(  # noqa: C901
                 except Exception as e:
                     progress.update(topic_task, completed=100)
                     console.print(
-                        f"[yellow]Topic detection failed: {e}. Continuing without.[/yellow]"
+                        f"[yellow]Topic detection failed: {e}. "
+                        f"Continuing without.[/yellow]"
                     )
                     topic_result = create_disabled_result()
             else:
@@ -514,7 +517,8 @@ def main(  # noqa: C901
                             )
                 else:
                     console.print(
-                        f"[green]Coverage validated: {coverage_result.clip_count} clips "
+                        f"[green]Coverage validated: "
+                        f"{coverage_result.clip_count} clips "
                         f"for ~{coverage_result.expected_topics} topics "
                         f"(ratio: {coverage_result.coverage_ratio:.0%})[/green]"
                     )

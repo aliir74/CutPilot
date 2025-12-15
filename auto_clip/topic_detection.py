@@ -22,7 +22,8 @@ class TopicDetectionResult:
     method: str  # "llm", "manual", "fallback", or "disabled"
 
 
-TOPIC_DETECTION_PROMPT = """You are analyzing a video transcript to count distinct news stories/topics.
+TOPIC_DETECTION_PROMPT = """You are analyzing a video transcript to count \
+distinct news stories/topics.
 
 TASK: Count the number of SEPARATE news items, stories, or distinct topics discussed.
 - Each news story = 1 topic (e.g., "Google AI announcement" = 1 topic)
