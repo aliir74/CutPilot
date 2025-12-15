@@ -162,6 +162,7 @@ def save_debug_artifact(
 
     filepath = debug_dir / filename
     if is_json:
+        assert isinstance(content, (dict, list))
         save_json(content, filepath)
     else:
         filepath.write_text(str(content), encoding="utf-8")
