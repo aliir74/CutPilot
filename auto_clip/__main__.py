@@ -16,7 +16,7 @@ from rich.progress import (
 from .cutting import cut_clips
 from .llm import propose_clips_with_llm
 from .segment import ClipProposal, TranscriptSegment
-from .transcribe import transcribe_video
+from .transcribe import transcribe_video, transcribe_video_elevenlabs
 from .utils import (
     check_dependencies,
     check_parameter_mismatch,
@@ -74,6 +74,12 @@ def main(  # noqa: C901
         "turbo",
         "--whisper-model",
         help="Whisper model size (e.g., 'turbo', 'large-v3', 'medium', 'small').",
+    ),
+    transcription_backend: str = typer.Option(
+        "local",
+        "--transcription-backend",
+        "-t",
+        help="Transcription backend: 'local' (mlx-whisper) or 'elevenlabs'.",
     ),
     temperature: float = typer.Option(
         0.5,
@@ -145,6 +151,15 @@ def main(  # noqa: C901
         console.print("[red]Error: --min-length must be at least 5 seconds[/red]")
         raise typer.Exit(1)
 
+    # Validate transcription backend
+    valid_backends = {"local", "elevenlabs"}
+    if transcription_backend not in valid_backends:
+        console.print(
+            f"[red]Error: --transcription-backend must be one of: "
+            f"{valid_backends}[/red]"
+        )
+        raise typer.Exit(1)
+
     # Create output directory
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -176,9 +191,15 @@ def main(  # noqa: C901
         transcript_data = load_json(transcript_path)
 
         # Check for parameter mismatches
+        params_to_check = {
+            "language": language,
+            "transcription_backend": transcription_backend,
+        }
+        if transcription_backend == "local":
+            params_to_check["whisper_model"] = whisper_model
         warnings = check_parameter_mismatch(
             transcript_data,
-            {"language": language, "whisper_model": whisper_model},
+            params_to_check,
             "transcript.json",
         )
         for warning in warnings:
@@ -223,7 +244,11 @@ def main(  # noqa: C901
     console.print(f"\n[bold blue]Auto-Clip[/bold blue] - Processing: {input_path.name}")
     console.print(f"  Language: {language}")
     console.print(f"  Clip length: {min_length}-{max_length}s")
-    console.print(f"  Whisper model: {whisper_model}")
+    console.print(f"  Transcription: {transcription_backend}", end="")
+    if transcription_backend == "local":
+        console.print(f" (model: {whisper_model})")
+    else:
+        console.print(" (ElevenLabs Scribe)")
     console.print(f"  Output: {output_dir}\n")
 
     with Progress(
@@ -236,32 +261,56 @@ def main(  # noqa: C901
 
         # Step 1: Transcribe video (conditionally)
         if run_transcription:
-            transcribe_task = progress.add_task(
-                "Loading Whisper model...", total=100
-            )
-            try:
-                segments = transcribe_video(
-                    input_path=input_path,
-                    language=language,
-                    model_size=whisper_model,
-                    progress=progress,
-                    task_id=transcribe_task,
+            if transcription_backend == "local":
+                transcribe_task = progress.add_task(
+                    "Loading Whisper model...", total=100
                 )
-            except Exception as e:
-                progress.update(transcribe_task, completed=100)
-                console.print(f"\n[red]Transcription failed: {e}[/red]")
-                raise typer.Exit(1)
+                try:
+                    segments = transcribe_video(
+                        input_path=input_path,
+                        language=language,
+                        model_size=whisper_model,
+                        progress=progress,
+                        task_id=transcribe_task,
+                    )
+                except Exception as e:
+                    progress.update(transcribe_task, completed=100)
+                    console.print(f"\n[red]Transcription failed: {e}[/red]")
+                    raise typer.Exit(1)
+            else:  # elevenlabs
+                transcribe_task = progress.add_task(
+                    "Preparing for ElevenLabs transcription...", total=100
+                )
+                try:
+                    segments = transcribe_video_elevenlabs(
+                        input_path=input_path,
+                        language=language,
+                        progress=progress,
+                        task_id=transcribe_task,
+                    )
+                except ValueError as e:
+                    progress.update(transcribe_task, completed=100)
+                    console.print(f"\n[red]Configuration error: {e}[/red]")
+                    raise typer.Exit(1)
+                except Exception as e:
+                    progress.update(transcribe_task, completed=100)
+                    console.print(f"\n[red]Transcription failed: {e}[/red]")
+                    raise typer.Exit(1)
 
             progress.update(
                 transcribe_task, completed=100, description="Transcription complete"
             )
 
             # Save transcript with parameters for future resume
+            whisper_model_value = (
+                whisper_model if transcription_backend == "local" else None
+            )
             save_json(
                 {
                     "video": str(input_path.name),
                     "language": language,
-                    "whisper_model": whisper_model,
+                    "transcription_backend": transcription_backend,
+                    "whisper_model": whisper_model_value,
                     "segments": [s.to_dict() for s in segments],
                 },
                 transcript_path,

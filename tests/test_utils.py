@@ -11,6 +11,7 @@ import pytest
 from auto_clip.utils import (
     check_dependencies,
     check_parameter_mismatch,
+    extract_audio,
     format_timestamp,
     get_video_duration,
     load_json,
@@ -415,3 +416,82 @@ class TestCheckParameterMismatch:
         warnings = check_parameter_mismatch(checkpoint, current, "transcript.json")
 
         assert warnings == []
+
+
+class TestExtractAudio:
+    """Tests for extract_audio function."""
+
+    def test_extract_audio_success(self, mocker, tmp_path):
+        """Test successful audio extraction."""
+        mock_run = mocker.patch("subprocess.run")
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stderr = ""
+
+        video_path = tmp_path / "video.mp4"
+        audio_path = tmp_path / "audio.mp3"
+
+        result = extract_audio(video_path, audio_path)
+
+        assert result == audio_path
+        mock_run.assert_called_once()
+
+        # Verify ffmpeg was called with correct arguments
+        call_args = mock_run.call_args[0][0]
+        assert call_args[0] == "ffmpeg"
+        assert "-i" in call_args
+        assert str(video_path) in call_args
+        assert "-vn" in call_args  # No video
+        assert "-acodec" in call_args
+        assert "libmp3lame" in call_args
+        assert str(audio_path) in call_args
+
+    def test_extract_audio_ffmpeg_failure(self, mocker, tmp_path):
+        """Test that ffmpeg failure raises RuntimeError."""
+        mock_run = mocker.patch("subprocess.run")
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stderr = "ffmpeg error message"
+
+        video_path = tmp_path / "video.mp4"
+        audio_path = tmp_path / "audio.mp3"
+
+        with pytest.raises(RuntimeError, match="ffmpeg failed"):
+            extract_audio(video_path, audio_path)
+
+    def test_extract_audio_timeout(self, mocker, tmp_path):
+        """Test that timeout raises RuntimeError."""
+        mocker.patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="ffmpeg", timeout=600),
+        )
+
+        video_path = tmp_path / "video.mp4"
+        audio_path = tmp_path / "audio.mp3"
+
+        with pytest.raises(RuntimeError, match="timed out"):
+            extract_audio(video_path, audio_path)
+
+    def test_extract_audio_exception(self, mocker, tmp_path):
+        """Test that generic exceptions are wrapped in RuntimeError."""
+        mocker.patch(
+            "subprocess.run",
+            side_effect=OSError("Permission denied"),
+        )
+
+        video_path = tmp_path / "video.mp4"
+        audio_path = tmp_path / "audio.mp3"
+
+        with pytest.raises(RuntimeError, match="Failed to extract audio"):
+            extract_audio(video_path, audio_path)
+
+    def test_extract_audio_overwrite_flag(self, mocker, tmp_path):
+        """Test that -y flag is included to overwrite existing files."""
+        mock_run = mocker.patch("subprocess.run")
+        mock_run.return_value.returncode = 0
+
+        video_path = tmp_path / "video.mp4"
+        audio_path = tmp_path / "audio.mp3"
+
+        extract_audio(video_path, audio_path)
+
+        call_args = mock_run.call_args[0][0]
+        assert "-y" in call_args

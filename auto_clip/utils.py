@@ -83,6 +83,45 @@ def load_json(path: Path) -> Any:
         return json.load(f)
 
 
+def extract_audio(video_path: Path, output_path: Path) -> Path:
+    """Extract audio from video using ffmpeg.
+
+    Args:
+        video_path: Path to the input video file.
+        output_path: Path for the output audio file.
+
+    Returns:
+        Path to the extracted audio file.
+
+    Raises:
+        RuntimeError: If audio extraction fails.
+    """
+    cmd = [
+        "ffmpeg",
+        "-i", str(video_path),
+        "-vn",  # No video
+        "-acodec", "libmp3lame",
+        "-q:a", "2",  # High quality (~190 kbps VBR)
+        "-y",  # Overwrite output
+        str(output_path),
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=600,  # 10 minutes max for long videos
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"ffmpeg failed: {result.stderr}")
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"Audio extraction timed out: {e}") from e
+    except Exception as e:
+        raise RuntimeError(f"Failed to extract audio: {e}") from e
+
+    return output_path
+
+
 def format_timestamp(seconds: float) -> str:
     """Convert seconds to HH:MM:SS format.
 
