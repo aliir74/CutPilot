@@ -18,6 +18,8 @@ dev = [
     "pytest-mock>=3.10.0",
     "pytest-cov>=4.0.0",
     "flake8>=7.0.0",
+    "mypy>=1.0.0",
+    "types-requests>=2.28.0",
 ]
 
 [project.scripts]
@@ -46,3 +48,10 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "if __name__ == .__main__.:",
 ]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+ignore_missing_imports = true

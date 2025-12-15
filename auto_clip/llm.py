@@ -6,7 +6,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import requests
 
@@ -165,7 +165,7 @@ def call_openrouter_chat(
         OPENROUTER_URL, json=payload, headers=headers, timeout=120
     )
     response.raise_for_status()
-    return response.json()
+    return cast(dict[Any, Any], response.json())
 
 
 def _format_transcript_window(segments: list[TranscriptSegment]) -> str:
@@ -176,7 +176,7 @@ def _format_transcript_window(segments: list[TranscriptSegment]) -> str:
     return "\n".join(lines)
 
 
-def _parse_llm_response(response_text: str) -> list[dict]:  # noqa: C901
+def _parse_llm_response(response_text: str) -> list[dict[Any, Any]]:  # noqa: C901
     """Parse LLM response to extract clips JSON.
 
     Args:
@@ -188,10 +188,17 @@ def _parse_llm_response(response_text: str) -> list[dict]:  # noqa: C901
     Raises:
         ValueError: If JSON parsing fails.
     """
+
+    def _extract_clips(data: Any) -> list[dict[Any, Any]]:
+        """Extract clips list from parsed JSON data."""
+        if isinstance(data, dict):
+            return cast(list[dict[Any, Any]], data.get("clips", []))
+        return []
+
     # Try direct JSON parse
     try:
         data = json.loads(response_text)
-        return data.get("clips", [])
+        return _extract_clips(data)
     except json.JSONDecodeError:
         pass
 
@@ -200,7 +207,7 @@ def _parse_llm_response(response_text: str) -> list[dict]:  # noqa: C901
     if code_block_match:
         try:
             data = json.loads(code_block_match.group(1).strip())
-            return data.get("clips", [])
+            return _extract_clips(data)
         except json.JSONDecodeError:
             pass
 
@@ -220,7 +227,7 @@ def _parse_llm_response(response_text: str) -> list[dict]:  # noqa: C901
                     potential_json = response_text[start_idx : i + 1]
                     try:
                         data = json.loads(potential_json)
-                        return data.get("clips", [])
+                        return _extract_clips(data)
                     except json.JSONDecodeError:
                         # Continue looking for other valid JSON
                         pass

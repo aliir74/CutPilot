@@ -4,7 +4,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .segment import TranscriptSegment
 from .utils import extract_audio, get_video_duration
@@ -195,7 +195,7 @@ def transcribe_video_elevenlabs(
     return segments
 
 
-def _extract_word_data(word) -> tuple[str, float, float]:
+def _extract_word_data(word: Any) -> tuple[str, float, float]:
     """Extract text, start, and end from a word object.
 
     Handles both object-style (with attributes) and dict-style words.
@@ -227,7 +227,7 @@ def _create_segment(
     )
 
 
-def _words_to_segments(result) -> list[TranscriptSegment]:  # noqa: C901
+def _words_to_segments(result: Any) -> list[TranscriptSegment]:  # noqa: C901
     """Convert ElevenLabs word-level response to segment-level TranscriptSegments.
 
     Groups words into segments based on:
